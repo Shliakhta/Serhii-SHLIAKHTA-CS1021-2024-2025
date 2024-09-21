@@ -19,9 +19,9 @@
 </h2>
 
 <p style="text-align: center;">
-З лабораторної роботи №1</p>
+З лабораторної роботи №2.1</p>
 <p style="text-align: center;">
-на тему: "Програмування на основі абстрактних типів даних"</p>
+на тему: "Контейнери бібліотеки STL"</p>
 <p style="text-align: center;">
 З дисципліни:</p>
 <p style="text-align: center;">
