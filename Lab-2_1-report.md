@@ -54,7 +54,6 @@
 ## Середовище розробки
 Visual Studio Code
 Microsoft Visual Studio 2022 
-IDE CLion 2024.2.1
 
 ## Написання програми
 ```c++
