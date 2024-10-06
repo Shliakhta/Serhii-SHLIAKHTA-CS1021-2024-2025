@@ -1,35 +1,42 @@
 #include <iostream>
 #include <deque>
 #include <string>
-#include <fstream>    // для роботи з файлами
-#include <sstream>    // для роботи з рядками
-#include <locale>     // для встановлення локалі
-#include <codecvt>    // для роботи з кодуванням
-#include <algorithm>  // для std::remove_if
-#include <windows.h>  // для функцій SetConsoleCP та SetConsoleOutputCP
+#include <fstream>   
+#include <sstream>  
+#include <locale>  
+#include <codecvt>
+#include <algorithm> 
+#include <windows.h>  
 
-// Функція для перетворення std::wstring на std::string з використанням кодека UTF-8
-std::string wstring_to_utf8(const std::wstring& str) {
-    std::wstring_convert<std::codecvt_utf8<wchar_t>> conv;
-    return conv.to_bytes(str);
-}
-
-// Клас для зберігання інформації про активність
-class Activity {
+class ActivityBase {
 public:
-    Activity(const std::wstring& name = L"", int duration = 0)
+    virtual ~ActivityBase() = default;
+
+    virtual std::wstring getName() const = 0;
+    virtual int getDuration() const = 0;
+    virtual std::wstring toString() const = 0;
+
+    static std::wstring wstring_to_utf8(const std::wstring& str) {
+        std::wstring_convert<std::codecvt_utf8<wchar_t>> conv;
+        return conv.to_bytes(str);
+    }
+};
+
+class StandardActivity : public ActivityBase {
+public:
+    StandardActivity(const std::wstring& name = L"", int duration = 0)
         : name(name), duration(duration) {}
 
-    std::wstring getName() const { return name; }
-    int getDuration() const { return duration; }
+    std::wstring getName() const override { return name; }
+    int getDuration() const override { return duration; }
 
-    std::wstring toString() const {
+    std::wstring toString() const override {
         std::wostringstream oss;
         oss << name << L"," << duration;
         return oss.str();
     }
 
-    static Activity fromString(const std::wstring& str) {
+    static StandardActivity fromString(const std::wstring& str) {
         std::wistringstream iss(str);
         std::wstring name;
         int duration = 0;
@@ -37,7 +44,7 @@ public:
         if (!(iss >> duration)) {
             duration = 0;
         }
-        return Activity(name, duration);
+        return StandardActivity(name, duration);
     }
 
 private:
@@ -45,17 +52,49 @@ private:
     int duration;
 };
 
-// Клас для керування списком активностей
+class SportActivity : public ActivityBase {
+public:
+    SportActivity(const std::wstring& name = L"", int duration = 0, const std::wstring& sportType = L"")
+        : name(name), duration(duration), sportType(sportType) {}
+
+    std::wstring getName() const override { return name; }
+    int getDuration() const override { return duration; }
+    std::wstring getSportType() const { return sportType; }
+
+    std::wstring toString() const override {
+        std::wostringstream oss;
+        oss << name << L"," << duration << L"," << sportType;
+        return oss.str();
+    }
+
+    static SportActivity fromString(const std::wstring& str) {
+        std::wistringstream iss(str);
+        std::wstring name, sportType;
+        int duration = 0;
+        std::getline(iss, name, L',');
+        if (!(iss >> duration)) {
+            duration = 0;
+        }
+        std::getline(iss, sportType, L',');
+        return SportActivity(name, duration, sportType);
+    }
+
+private:
+    std::wstring name;
+    int duration;
+    std::wstring sportType;
+};
+
 class ActivityTracker {
 public:
-    void addActivity(const std::wstring& name, int duration) {
-        activities.emplace_back(name, duration);
+    void addActivity(ActivityBase* activity) {
+        activities.emplace_back(activity);
     }
 
     void removeActivity(const std::wstring& name) {
         auto it = std::remove_if(activities.begin(), activities.end(),
-            [&name](const Activity& activity) {
-                return activity.getName() == name;
+            [&name](const std::unique_ptr<ActivityBase>& activity) {
+                return activity->getName() == name;
             });
         if (it != activities.end()) {
             activities.erase(it, activities.end());
@@ -64,119 +103,136 @@ public:
 
     void displayActivities() const {
         if (activities.empty()) {
-            std::wcout << L"Список активностей порожній." << std::endl;
+            std::wcout << L"РЎРїРёСЃРѕРє Р°РєС‚РёРІРЅРѕСЃС‚РµР№ РїРѕСЂРѕР¶РЅС–Р№." << std::endl;
             return;
         }
-        std::wcout << L"Список активностей:" << std::endl;
+        std::wcout << L"РЎРїРёСЃРѕРє Р°РєС‚РёРІРЅРѕСЃС‚РµР№:" << std::endl;
         for (const auto& activity : activities) {
-            std::wcout << L"Активність: " << (activity.getName().empty() ? L"Невідома активність" : activity.getName())
-                << L", Тривалість: " << activity.getDuration() << L" хв." << std::endl;
+            std::wcout << L"РђРєС‚РёРІРЅС–СЃС‚СЊ: " << activity->getName()
+                << L", РўСЂРёРІР°Р»С–СЃС‚СЊ: " << activity->getDuration() << L" С…РІ." << std::endl;
         }
     }
 
     int getTotalDuration() const {
         int total = 0;
         for (const auto& activity : activities) {
-            total += activity.getDuration();
+            total += activity->getDuration();
         }
         return total;
     }
 
     void saveToFile(const std::wstring& filename) const {
-        std::wofstream ofs(wstring_to_utf8(filename));
+        std::wofstream ofs(ActivityBase::wstring_to_utf8(filename));
         ofs.imbue(std::locale(std::locale(), new std::codecvt_utf8<wchar_t>));
         if (!ofs) {
-            std::wcerr << L"Помилка відкриття файлу для запису." << std::endl;
+            std::wcerr << L"РџРѕРјРёР»РєР° РІС–РґРєСЂРёС‚С‚СЏ С„Р°Р№Р»Сѓ РґР»СЏ Р·Р°РїРёСЃСѓ." << std::endl;
             return;
         }
         for (const auto& activity : activities) {
-            ofs << activity.toString() << std::endl;
+            ofs << activity->toString() << std::endl;
         }
     }
 
     void loadFromFile(const std::wstring& filename) {
-        std::wifstream ifs(wstring_to_utf8(filename));
+        std::wifstream ifs(ActivityBase::wstring_to_utf8(filename));
         ifs.imbue(std::locale(std::locale(), new std::codecvt_utf8<wchar_t>));
         if (!ifs) {
-            std::wcerr << L"Помилка відкриття файлу для читання." << std::endl;
+            std::wcerr << L"РџРѕРјРёР»РєР° РІС–РґРєСЂРёС‚С‚СЏ С„Р°Р№Р»Сѓ РґР»СЏ С‡РёС‚Р°РЅРЅСЏ." << std::endl;
             return;
         }
         activities.clear();
         std::wstring line;
         while (std::getline(ifs, line)) {
             if (!line.empty()) {
-                activities.push_back(Activity::fromString(line));
+                if (line.find(L",") != std::wstring::npos && line.find(L",", line.find(L",") + 1) != std::wstring::npos) {
+                    activities.push_back(std::make_unique<SportActivity>(SportActivity::fromString(line)));
+                }
+                else {
+                    activities.push_back(std::make_unique<StandardActivity>(StandardActivity::fromString(line)));
+                }
             }
         }
     }
 
 private:
-    std::deque<Activity> activities;
+    std::deque<std::unique_ptr<ActivityBase>> activities;
 };
 
 int main() {
-    SetConsoleCP(65001); // Для введення з консолі
-    SetConsoleOutputCP(65001); // Для виведення в консоль
+    SetConsoleCP(65001);
+    SetConsoleOutputCP(65001); 
     std::wcin.imbue(std::locale(std::locale(), new std::codecvt_utf8<wchar_t>));
     std::wcout.imbue(std::locale(std::locale(), new std::codecvt_utf8<wchar_t>));
 
     ActivityTracker tracker;
     int choice;
-    std::wstring name;
+    std::wstring name, sportType;
     int duration;
     std::wstring filename = L"C:\\Users\\TYMCHYK\\Downloads\\Activity.txt";
 
     tracker.loadFromFile(filename);
 
     while (true) {
-        std::wcout << L"\nМеню:\n";
-        std::wcout << L"1. Додати активність\n";
-        std::wcout << L"2. Видалити активність\n";
-        std::wcout << L"3. Показати активності\n";
-        std::wcout << L"4. Підрахувати загальну тривалість\n";
-        std::wcout << L"5. Зберегти активності у файл\n";
-        std::wcout << L"6. Вийти\n";
-        std::wcout << L"Оберіть опцію: ";
+        std::wcout << L"\nРњРµРЅСЋ:\n";
+        std::wcout << L"1. Р”РѕРґР°С‚Рё СЃС‚Р°РЅРґР°СЂС‚РЅСѓ Р°РєС‚РёРІРЅС–СЃС‚СЊ\n";
+        std::wcout << L"2. Р”РѕРґР°С‚Рё СЃРїРѕСЂС‚РёРІРЅСѓ Р°РєС‚РёРІРЅС–СЃС‚СЊ\n";
+        std::wcout << L"3. Р’РёРґР°Р»РёС‚Рё Р°РєС‚РёРІРЅС–СЃС‚СЊ\n";
+        std::wcout << L"4. РџРѕРєР°Р·Р°С‚Рё Р°РєС‚РёРІРЅРѕСЃС‚С–\n";
+        std::wcout << L"5. РџС–РґСЂР°С…СѓРІР°С‚Рё Р·Р°РіР°Р»СЊРЅСѓ С‚СЂРёРІР°Р»С–СЃС‚СЊ\n";
+        std::wcout << L"6. Р—Р±РµСЂРµРіС‚Рё Р°РєС‚РёРІРЅРѕСЃС‚С– Сѓ С„Р°Р№Р»\n";
+        std::wcout << L"7. Р’РёР№С‚Рё\n";
+        std::wcout << L"РћР±РµСЂС–С‚СЊ РѕРїС†С–СЋ: ";
         std::wcin >> choice;
         std::wcin.ignore();
 
         switch (choice) {
         case 1:
-            std::wcout << L"Введіть назву активності: ";
+            std::wcout << L"Р’РІРµРґС–С‚СЊ РЅР°Р·РІСѓ Р°РєС‚РёРІРЅРѕСЃС‚С–: ";
             std::getline(std::wcin, name);
-            std::wcout << L"Введіть тривалість активності (в хвилинах): ";
+            std::wcout << L"Р’РІРµРґС–С‚СЊ С‚СЂРёРІР°Р»С–СЃС‚СЊ Р°РєС‚РёРІРЅРѕСЃС‚С– (РІ С…РІРёР»РёРЅР°С…): ";
             std::wcin >> duration;
-            tracker.addActivity(name, duration);
+            tracker.addActivity(new StandardActivity(name, duration));
             break;
 
         case 2:
-            std::wcout << L"Введіть назву активності для видалення: ";
+            std::wcout << L"Р’РІРµРґС–С‚СЊ РЅР°Р·РІСѓ СЃРїРѕСЂС‚РёРІРЅРѕС— Р°РєС‚РёРІРЅРѕСЃС‚С–: ";
+            std::getline(std::wcin, name);
+            std::wcout << L"Р’РІРµРґС–С‚СЊ С‚СЂРёРІР°Р»С–СЃС‚СЊ Р°РєС‚РёРІРЅРѕСЃС‚С– (РІ С…РІРёР»РёРЅР°С…): ";
+            std::wcin >> duration;
+            std::wcout << L"Р’РІРµРґС–С‚СЊ С‚РёРї СЃРїРѕСЂС‚Сѓ: ";
+            std::wcin.ignore();
+            std::getline(std::wcin, sportType);
+            tracker.addActivity(new SportActivity(name, duration, sportType));
+            break;
+
+        case 3:
+            std::wcout << L"Р’РІРµРґС–С‚СЊ РЅР°Р·РІСѓ Р°РєС‚РёРІРЅРѕСЃС‚С– РґР»СЏ РІРёРґР°Р»РµРЅРЅСЏ: ";
             std::getline(std::wcin, name);
             tracker.removeActivity(name);
             break;
 
-        case 3:
+        case 4:
             tracker.displayActivities();
             break;
 
-        case 4:
-            std::wcout << L"Загальна тривалість активностей: "
-                << tracker.getTotalDuration() << L" хв." << std::endl;
-            break;
-
         case 5:
-            tracker.saveToFile(filename);
-            std::wcout << L"Активності збережено у файл " << filename << L"." << std::endl;
+            std::wcout << L"Р—Р°РіР°Р»СЊРЅР° С‚СЂРёРІР°Р»С–СЃС‚СЊ Р°РєС‚РёРІРЅРѕСЃС‚РµР№: "
+                << tracker.getTotalDuration() << L" С…РІ." << std::endl;
             break;
 
         case 6:
             tracker.saveToFile(filename);
-            std::wcout << L"Зміни збережено у файл " << filename
-                << L". Вихід з програми." << std::endl;
+            std::wcout << L"РђРєС‚РёРІРЅРѕСЃС‚С– Р·Р±РµСЂРµР¶РµРЅРѕ Сѓ С„Р°Р№Р» " << filename << L"." << std::endl;
+            break;
+
+        case 7:
+            tracker.saveToFile(filename);
+            std::wcout << L"Р—РјС–РЅРё Р·Р±РµСЂРµР¶РµРЅРѕ Сѓ С„Р°Р№Р» " << filename
+                << L". Р’РёС…С–Рґ Р· РїСЂРѕРіСЂР°РјРё." << std::endl;
             return 0;
 
         default:
-            std::wcout << L"Некоректний вибір, спробуйте знову." << std::endl;
+            std::wcout << L"РќРµРєРѕСЂРµРєС‚РЅРёР№ РІРёР±С–СЂ, СЃРїСЂРѕР±СѓР№С‚Рµ Р·РЅРѕРІСѓ." << std::endl;
         }
     }
 
