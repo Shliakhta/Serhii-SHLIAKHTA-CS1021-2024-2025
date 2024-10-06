@@ -63,25 +63,41 @@
 
 ### Написання програми
 
-Для реалізації програми було створено два основні класи: Activity, який представляє фізичну активність, та ActivityTracker, який керує списком активностей за допомогою контейнера std::deque.
+Для реалізації програми було створено три основні класи: ActivityBase, який є абстрактним базовим класом для фізичних активностей, StandardActivity та SportActivity, які представляють стандартну та спортивну активності відповідно. Клас ActivityTracker керує списком активностей за допомогою контейнера std::deque.
 
-Клас Activity містить назву активності та її тривалість. У ньому реалізовані методи для отримання та форматування інформації про активність:
+Клас ActivityBase містить чисті віртуальні методи для отримання інформації про активність, такі як назва, тривалість та форматування інформації:
 ```
-class Activity {
+class ActivityBase {
 public:
-    Activity(const std::wstring& name = L"", int duration = 0)
+    virtual ~ActivityBase() = default;
+
+    virtual std::wstring getName() const = 0;
+    virtual int getDuration() const = 0;
+    virtual std::wstring toString() const = 0;
+
+    static std::wstring wstring_to_utf8(const std::wstring& str) {
+        std::wstring_convert<std::codecvt_utf8<wchar_t>> conv;
+        return conv.to_bytes(str);
+    }
+};
+```
+Клас StandardActivity є похідним від ActivityBase і реалізує методи для стандартних активностей. Він зберігає назву активності та її тривалість, а також надає методи для форматування та парсингу даних:
+```
+class StandardActivity : public ActivityBase {
+public:
+    StandardActivity(const std::wstring& name = L"", int duration = 0)
         : name(name), duration(duration) {}
 
-    std::wstring getName() const { return name; }
-    int getDuration() const { return duration; }
+    std::wstring getName() const override { return name; }
+    int getDuration() const override { return duration; }
 
-    std::wstring toString() const {
+    std::wstring toString() const override {
         std::wostringstream oss;
         oss << name << L"," << duration;
         return oss.str();
     }
 
-    static Activity fromString(const std::wstring& str) {
+    static StandardActivity fromString(const std::wstring& str) {
         std::wistringstream iss(str);
         std::wstring name;
         int duration = 0;
@@ -89,7 +105,7 @@ public:
         if (!(iss >> duration)) {
             duration = 0;
         }
-        return Activity(name, duration);
+        return StandardActivity(name, duration);
     }
 
 private:
@@ -97,18 +113,53 @@ private:
     int duration;
 };
 ```
-Клас ActivityTracker керує чергою фізичних активностей. Основні функції класу включають додавання, видалення активностей, підрахунок загальної тривалості та збереження/завантаження активностей у файл:
+Клас SportActivity також є похідним від ActivityBase і реалізує додаткову інформацію про тип спорту:
+```
+class SportActivity : public ActivityBase {
+public:
+    SportActivity(const std::wstring& name = L"", int duration = 0, const std::wstring& sportType = L"")
+        : name(name), duration(duration), sportType(sportType) {}
+
+    std::wstring getName() const override { return name; }
+    int getDuration() const override { return duration; }
+    std::wstring getSportType() const { return sportType; }
+
+    std::wstring toString() const override {
+        std::wostringstream oss;
+        oss << name << L"," << duration << L"," << sportType;
+        return oss.str();
+    }
+
+    static SportActivity fromString(const std::wstring& str) {
+        std::wistringstream iss(str);
+        std::wstring name, sportType;
+        int duration = 0;
+        std::getline(iss, name, L',');
+        if (!(iss >> duration)) {
+            duration = 0;
+        }
+        std::getline(iss, sportType, L',');
+        return SportActivity(name, duration, sportType);
+    }
+
+private:
+    std::wstring name;
+    int duration;
+    std::wstring sportType;
+};
+```
+Клас ActivityTracker управляє чергою фізичних активностей, забезпечуючи функції для додавання, видалення активностей, підрахунку загальної тривалості та збереження/завантаження активностей з файлу:
 ```
 class ActivityTracker {
 public:
-    void addActivity(const std::wstring& name, int duration) {
-        activities.emplace_back(name, duration);
+    void addActivity(ActivityBase* activity) {
+        activities.emplace_back(activity);
     }
 
     void removeActivity(const std::wstring& name) {
         auto it = std::remove_if(activities.begin(), activities.end(),
-            [&name](const Activity& activity) {
-                return activity.getName() == name;
+            [&name](const std::unique_ptr<ActivityBase>& activity) {
+                return activity->getName() == name;
             });
         if (it != activities.end()) {
             activities.erase(it, activities.end());
@@ -122,33 +173,33 @@ public:
         }
         std::wcout << L"Список активностей:" << std::endl;
         for (const auto& activity : activities) {
-            std::wcout << L"Активність: " << (activity.getName().empty() ? L"Невідома активність" : activity.getName())
-                << L", Тривалість: " << activity.getDuration() << L" хв." << std::endl;
+            std::wcout << L"Активність: " << activity->getName()
+                << L", Тривалість: " << activity->getDuration() << L" хв." << std::endl;
         }
     }
 
     int getTotalDuration() const {
         int total = 0;
         for (const auto& activity : activities) {
-            total += activity.getDuration();
+            total += activity->getDuration();
         }
         return total;
     }
 
     void saveToFile(const std::wstring& filename) const {
-        std::wofstream ofs(wstring_to_utf8(filename));
+        std::wofstream ofs(ActivityBase::wstring_to_utf8(filename));
         ofs.imbue(std::locale(std::locale(), new std::codecvt_utf8<wchar_t>));
         if (!ofs) {
             std::wcerr << L"Помилка відкриття файлу для запису." << std::endl;
             return;
         }
         for (const auto& activity : activities) {
-            ofs << activity.toString() << std::endl;
+            ofs << activity->toString() << std::endl;
         }
     }
 
     void loadFromFile(const std::wstring& filename) {
-        std::wifstream ifs(wstring_to_utf8(filename));
+        std::wifstream ifs(ActivityBase::wstring_to_utf8(filename));
         ifs.imbue(std::locale(std::locale(), new std::codecvt_utf8<wchar_t>));
         if (!ifs) {
             std::wcerr << L"Помилка відкриття файлу для читання." << std::endl;
@@ -158,13 +209,18 @@ public:
         std::wstring line;
         while (std::getline(ifs, line)) {
             if (!line.empty()) {
-                activities.push_back(Activity::fromString(line));
+                if (line.find(L",") != std::wstring::npos && line.find(L",", line.find(L",") + 1) != std::wstring::npos) {
+                    activities.push_back(std::make_unique<SportActivity>(SportActivity::fromString(line)));
+                }
+                else {
+                    activities.push_back(std::make_unique<StandardActivity>(StandardActivity::fromString(line)));
+                }
             }
         }
     }
 
 private:
-    std::deque<Activity> activities;
+    std::deque<std::unique_ptr<ActivityBase>> activities;
 };
 ```
 Основні функціональні можливості
@@ -182,7 +238,6 @@ private:
 
 ### Завдання на захист
 
-Для збирання проєкту необхідно використовувати CMake та створити відповідний файл конфігурації для компіляції проєкту, що використовує Clang або інший компілятор з підтримкою стандарту C++17 або вище.
 
 ### Висновки
 Реалізована програма для стеження за фізичною активністю на основі контейнера std::deque. Програма дозволяє додавати, видаляти активності, зберігати їх у файл та підраховувати загальний час. Були використані сучасні можливості C++ для роботи з файлами та локалями.
